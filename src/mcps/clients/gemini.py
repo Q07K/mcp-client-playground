@@ -124,7 +124,6 @@ if __name__ == "__main__":
     import asyncio
 
     from src.core.logger import mcp_logger
-    from src.core.settings import settings
 
     async def main() -> None:
         async with GeminiMCPClient() as client:
