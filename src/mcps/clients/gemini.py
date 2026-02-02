@@ -2,6 +2,7 @@ from typing import Any
 
 from google import genai
 from google.genai import types
+from google.genai.chats import Chat
 from mcp.types import Tool
 
 from .base import REACT_SYSTEM_PROMPT, BaseMCPClient, ReActStep, ToolCallInfo
@@ -19,10 +20,14 @@ class GeminiMCPClient(
 
     DEFAULT_MODEL = "gemini-2.5-flash"
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
-        self._client = genai.Client(api_key=api_key)
-        self._chat: types.Chat | None = None
+        from src.core.settings import settings
+
+        self._client = genai.Client(api_key=api_key or settings.gemini_api_key)
+        self._chat: Chat | None = None
+        self._pending_user_input: str = ""
+        self._pending_tool_response: types.Part | None = None
 
     def _convert_tools(self, tools: list[Tool]) -> list[GeminiTool]:
         """MCP 도구를 Gemini 형식으로 변환."""
@@ -118,12 +123,11 @@ if __name__ == "__main__":
     import asyncio
 
     from src.core.logger import mcp_logger
+    from src.core.settings import settings
 
     async def main() -> None:
-        async with GeminiMCPClient(api_key="YOUR_GEMINI_API_KEY") as client:
-            await client.load_servers_from_config(
-                '{"mcpServers": {"math_server": {"url": "http://localhost:8000/sse"}}}'
-            )
+        async with GeminiMCPClient() as client:
+            await client.load_servers_from_config(settings.mcp_servers_path)
             response = await client.chat(
                 "What is 15 multiplied by 3, then divided by 5?"
             )

@@ -20,9 +20,11 @@ class OpenAIMCPClient(
 
     DEFAULT_MODEL = "gpt-4o"
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
-        self._client = OpenAI(api_key=api_key)
+        from src.core.settings import settings
+
+        self._client = OpenAI(api_key=api_key or settings.openai_api_key)
 
     def _convert_tools(self, tools: list[Tool]) -> list[ChatCompletionToolParam]:
         """MCP 도구를 OpenAI 형식으로 변환."""
@@ -111,12 +113,11 @@ if __name__ == "__main__":
     import asyncio
 
     from src.core.logger import mcp_logger
+    from src.core.settings import settings
 
     async def main() -> None:
-        async with OpenAIMCPClient(api_key="sk-proj-YOUR_API_KEY") as client:
-            await client.load_servers_from_config(
-                '{"mcpServers": {"math_server": {"url": "http://localhost:8000/sse"}}}'
-            )
+        async with OpenAIMCPClient() as client:
+            await client.load_servers_from_config(settings.mcp_servers_path)
             response = await client.chat(
                 "What is 15 multiplied by 3, then divided by 5?"
             )

@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+import httpx
 from mcp import ClientSession
+from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import Tool
 
@@ -65,10 +67,19 @@ class BaseMCPClient(ABC, Generic[TMessage, TTool, TResponse]):
         headers: dict[str, str] | None = None,
     ) -> None:
         """서버를 추가하고 세션을 등록."""
-        conn = await self.exit_stack.enter_async_context(
-            streamable_http_client(url, headers=headers or {})
-        )
-        read, write = conn
+        if transport == TransportType.SSE:
+            conn = await self.exit_stack.enter_async_context(
+                sse_client(url, headers=headers)
+            )
+            read, write = conn
+        else:
+            http_client = None
+            if headers:
+                http_client = httpx.AsyncClient(headers=headers)
+            conn = await self.exit_stack.enter_async_context(
+                streamable_http_client(url, http_client=http_client)
+            )
+            read, write, _ = conn
         session = await self.exit_stack.enter_async_context(
             ClientSession(read, write)
         )
