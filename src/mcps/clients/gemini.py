@@ -1,23 +1,30 @@
+from typing import Any
+
 from google import genai
 from google.genai import types
 from mcp.types import Tool
 
-from src.core.logger import log_execution_time, mcp_logger
+from .base import REACT_SYSTEM_PROMPT, BaseMCPClient, ReActStep, ToolCallInfo
 
-from .base import BaseMCPClient
+# Gemini 타입 정의
+GeminiMessage = types.Content
+GeminiTool = types.Tool
+GeminiResponse = types.GenerateContentResponse
 
 
-class GeminiMCPClient(BaseMCPClient):
+class GeminiMCPClient(
+    BaseMCPClient[GeminiMessage, GeminiTool, GeminiResponse]
+):
     """Gemini API를 사용하는 MCP 클라이언트."""
 
     DEFAULT_MODEL = "gemini-2.5-flash"
 
     def __init__(self, api_key: str) -> None:
         super().__init__()
-        self.model_client = genai.Client(api_key=api_key)
+        self._client = genai.Client(api_key=api_key)
+        self._chat: types.Chat | None = None
 
-    @staticmethod
-    def _convert_tools(tools: list[Tool]) -> list[types.Tool]:
+    def _convert_tools(self, tools: list[Tool]) -> list[GeminiTool]:
         """MCP 도구를 Gemini 형식으로 변환."""
         return [
             types.Tool(
@@ -32,36 +39,85 @@ class GeminiMCPClient(BaseMCPClient):
             )
         ]
 
-    @log_execution_time(logger=mcp_logger)
-    async def chat(self, user_input: str, model: str | None = None) -> str:
-        """Gemini와 대화하며 필요시 도구 호출."""
-        model = model or self.DEFAULT_MODEL
-        tools = await self.get_all_tools()
-        gemini_tools = self._convert_tools(tools)
+    def _create_initial_messages(self, user_input: str) -> list[GeminiMessage]:
+        """초기 메시지 생성 (Gemini는 chat 객체 생성)."""
+        # Gemini는 chat 기반이므로 빈 리스트 반환, chat 객체는 _send_message에서 관리
+        return []
 
-        chat = self.model_client.chats.create(
-            model=model, config={"tools": gemini_tools}
+    def _send_message(
+        self,
+        model: str,
+        messages: list[GeminiMessage],
+        tools: list[GeminiTool] | None,
+    ) -> GeminiResponse:
+        """Gemini API 호출."""
+        # 첫 호출 시 chat 객체 생성
+        if self._chat is None:
+            self._chat = self._client.chats.create(
+                model=model,
+                config={
+                    "tools": tools,
+                    "system_instruction": REACT_SYSTEM_PROMPT,
+                },
+            )
+            # messages[-1]은 user input (첫 호출에서만)
+            return self._chat.send_message(message=self._pending_user_input)
+
+        # 후속 호출은 도구 결과 전송
+        return self._chat.send_message(message=self._pending_tool_response)
+
+    def _parse_response(self, response: GeminiResponse) -> ReActStep:
+        """응답에서 Thought와 Tool Call 추출."""
+        parts = response.candidates[0].content.parts
+
+        thought_parts = [p.text for p in parts if p.text]
+        fc_parts = [p.function_call for p in parts if p.function_call]
+
+        thought = " ".join(thought_parts) if thought_parts else None
+
+        if not fc_parts:
+            return ReActStep(thought=thought, tool_call=None)
+
+        fc = fc_parts[0]
+        return ReActStep(
+            thought=thought,
+            tool_call=ToolCallInfo(name=fc.name, arguments=dict(fc.args)),
         )
-        response = chat.send_message(message=user_input)
 
-        # 도구 호출 루프
-        call_count = 0
-        while fc := response.candidates[0].content.parts[0].function_call:
-            call_count += 1
-            result = await self.execute_tool(
-                call_count, fc.name, dict(fc.args)
-            )
-            response = chat.send_message(
-                message=types.Part.from_function_response(
-                    name=fc.name, response={"result": result.content}
-                )
-            )
+    def _append_assistant_message(
+        self,
+        messages: list[GeminiMessage],
+        response: GeminiResponse,
+    ) -> None:
+        """Gemini는 chat 객체가 히스토리 관리하므로 별도 처리 불필요."""
+        pass
 
+    def _append_tool_result(
+        self,
+        messages: list[GeminiMessage],
+        tool_call: ToolCallInfo,
+        result: Any,
+    ) -> None:
+        """도구 결과를 pending으로 저장."""
+        self._pending_tool_response = types.Part.from_function_response(
+            name=tool_call.name, response={"result": result.content}
+        )
+
+    def _get_final_response(self, response: GeminiResponse) -> str:
+        """최종 응답 추출."""
+        self._chat = None  # chat 객체 초기화
         return response.text
+
+    async def chat(self, user_input: str, model: str | None = None) -> str:
+        """ReAct 패턴으로 대화 (Gemini용 오버라이드)."""
+        self._pending_user_input = user_input
+        return await super().chat(user_input, model)
 
 
 if __name__ == "__main__":
     import asyncio
+
+    from src.core.logger import mcp_logger
 
     async def main() -> None:
         async with GeminiMCPClient(api_key="YOUR_GEMINI_API_KEY") as client:

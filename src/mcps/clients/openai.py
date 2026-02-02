@@ -1,29 +1,30 @@
 import json
+from typing import Any
 
 from mcp.types import Tool
 from openai import OpenAI
-from openai.types.chat import (
-    ChatCompletionMessageParam,
-    ChatCompletionToolParam,
-)
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from openai.types.chat.chat_completion import ChatCompletion
 
-from src.core.logger import log_execution_time, mcp_logger
-
-from .base import BaseMCPClient
+from .base import REACT_SYSTEM_PROMPT, BaseMCPClient, ReActStep, ToolCallInfo
 
 
-class OpenAIMCPClient(BaseMCPClient):
+class OpenAIMCPClient(
+    BaseMCPClient[
+        ChatCompletionMessageParam,
+        ChatCompletionToolParam,
+        ChatCompletion,
+    ]
+):
     """OpenAI API를 사용하는 MCP 클라이언트."""
 
     DEFAULT_MODEL = "gpt-4o"
 
     def __init__(self, api_key: str) -> None:
         super().__init__()
-        self.model_client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key)
 
-    @staticmethod
-    def _convert_tools(tools: list[Tool]) -> list[ChatCompletionToolParam]:
+    def _convert_tools(self, tools: list[Tool]) -> list[ChatCompletionToolParam]:
         """MCP 도구를 OpenAI 형식으로 변환."""
         return [
             {
@@ -37,61 +38,79 @@ class OpenAIMCPClient(BaseMCPClient):
             for tool in tools
         ]
 
-    def _create_completion(
+    def _create_initial_messages(
+        self, user_input: str
+    ) -> list[ChatCompletionMessageParam]:
+        """초기 메시지 생성."""
+        return [
+            {"role": "system", "content": REACT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ]
+
+    def _send_message(
         self,
         model: str,
         messages: list[ChatCompletionMessageParam],
         tools: list[ChatCompletionToolParam] | None,
     ) -> ChatCompletion:
         """OpenAI API 호출."""
-        return self.model_client.chat.completions.create(
+        return self._client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools or None,
+            parallel_tool_calls=False if tools else None,
         )
 
-    @log_execution_time(logger=mcp_logger)
-    async def chat(self, user_input: str, model: str | None = None) -> str:
-        """OpenAI와 대화하며 필요시 도구 호출."""
-        model = model or self.DEFAULT_MODEL
-        tools = await self.get_all_tools()
-        openai_tools = self._convert_tools(tools) if tools else None
+    def _parse_response(self, response: ChatCompletion) -> ReActStep:
+        """응답에서 Thought와 Tool Call 추출."""
+        message = response.choices[0].message
+        thought = message.content
 
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "user", "content": user_input}
-        ]
-        response = self._create_completion(
-            model=model, messages=messages, tools=openai_tools
+        if not message.tool_calls:
+            return ReActStep(thought=thought, tool_call=None)
+
+        tc = message.tool_calls[0]
+        return ReActStep(
+            thought=thought,
+            tool_call=ToolCallInfo(
+                name=tc.function.name,
+                arguments=json.loads(tc.function.arguments),
+                call_id=tc.id,
+            ),
         )
 
-        # 도구 호출 루프
-        call_count = 0
-        while tool_calls := response.choices[0].message.tool_calls:
-            messages.append(response.choices[0].message)  # type: ignore
+    def _append_assistant_message(
+        self,
+        messages: list[ChatCompletionMessageParam],
+        response: ChatCompletion,
+    ) -> None:
+        """어시스턴트 메시지 추가."""
+        messages.append(response.choices[0].message)  # type: ignore
 
-            for tool_call in tool_calls:
-                call_count += 1
-                args = json.loads(tool_call.function.arguments)
-                result = await self.execute_tool(
-                    call_count, tool_call.function.name, args
-                )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": str(result.content),
-                    }
-                )
+    def _append_tool_result(
+        self,
+        messages: list[ChatCompletionMessageParam],
+        tool_call: ToolCallInfo,
+        result: Any,
+    ) -> None:
+        """도구 결과 메시지 추가."""
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call.call_id or "",
+                "content": str(result.content),
+            }
+        )
 
-            response = self._create_completion(
-                model=model, messages=messages, tools=openai_tools
-            )
-
+    def _get_final_response(self, response: ChatCompletion) -> str:
+        """최종 응답 추출."""
         return response.choices[0].message.content or ""
 
 
 if __name__ == "__main__":
     import asyncio
+
+    from src.core.logger import mcp_logger
 
     async def main() -> None:
         async with OpenAIMCPClient(api_key="sk-proj-YOUR_API_KEY") as client:
