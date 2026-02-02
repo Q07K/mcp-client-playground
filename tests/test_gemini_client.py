@@ -30,7 +30,7 @@ class TestGeminiMCPClient:
         mock_gemini_client.sessions = {"math_server": MagicMock()}
 
         # Act
-        result = await mock_gemini_client._execute_tool_call(
+        result = await mock_gemini_client.execute_tool(
             call_count=1, tool_name="divide", tool_args={"a": 45, "b": 5}
         )
 
@@ -52,7 +52,7 @@ class TestGeminiMCPClient:
 
         # Act & Assert
         with pytest.raises(ConnectionError, match="Server connection failed"):
-            await mock_gemini_client._execute_tool_call(
+            await mock_gemini_client.execute_tool(
                 call_count=1, tool_name="divide", tool_args={"a": 45, "b": 5}
             )
 

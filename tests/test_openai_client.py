@@ -30,7 +30,7 @@ class TestOpenAIMCPClient:
         mock_openai_client.sessions = {"math_server": MagicMock()}
 
         # Act
-        result = await mock_openai_client._execute_tool_call(
+        result = await mock_openai_client.execute_tool(
             call_count=1, tool_name="multiply", tool_args={"a": 15, "b": 3}
         )
 
@@ -55,7 +55,7 @@ class TestOpenAIMCPClient:
 
         # Act & Assert
         with pytest.raises(ValueError, match="not found"):
-            await mock_openai_client._execute_tool_call(
+            await mock_openai_client.execute_tool(
                 call_count=1, tool_name="unknown_tool", tool_args={}
             )
 
