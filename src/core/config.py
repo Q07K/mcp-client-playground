@@ -92,39 +92,8 @@ class MCPConfig:
         return cls.from_dict(data)
 
 
-# SSE 및 HTTP 서버 설정 예시 JSON 템플릿
-CONFIG_EXAMPLE = """
-{
-  "mcpServers": {
-    "math_server": {
-      "url": "http://localhost:8000/sse",
-      "transport": "sse",
-      "headers": {},
-      "timeout": 30
-    },
-    "weather_server": {
-      "url": "http://localhost:8001/sse",
-      "transport": "sse",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      },
-      "timeout": 60
-    },
-    "http_api_server": {
-      "url": "http://localhost:8002/mcp",
-      "transport": "http",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      },
-      "timeout": 30
-    }
-  }
-}
-"""
-
 __all__ = [
     "TransportType",
     "MCPServerConfig",
     "MCPConfig",
-    "CONFIG_EXAMPLE",
 ]
