@@ -5,6 +5,8 @@ from google.genai import types
 from google.genai.chats import Chat
 from mcp.types import Tool
 
+from src.core.settings import settings
+
 from .base import REACT_SYSTEM_PROMPT, BaseMCPClient, ReActStep, ToolCallInfo
 
 # Gemini 타입 정의
@@ -22,7 +24,6 @@ class GeminiMCPClient(
 
     def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
-        from src.core.settings import settings
 
         self._client = genai.Client(api_key=api_key or settings.gemini_api_key)
         self._chat: Chat | None = None

@@ -3,8 +3,13 @@ from typing import Any
 
 from mcp.types import Tool
 from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionToolParam,
+)
 from openai.types.chat.chat_completion import ChatCompletion
+
+from src.core.settings import settings
 
 from .base import REACT_SYSTEM_PROMPT, BaseMCPClient, ReActStep, ToolCallInfo
 
@@ -22,11 +27,12 @@ class OpenAIMCPClient(
 
     def __init__(self, api_key: str | None = None) -> None:
         super().__init__()
-        from src.core.settings import settings
 
         self._client = OpenAI(api_key=api_key or settings.openai_api_key)
 
-    def _convert_tools(self, tools: list[Tool]) -> list[ChatCompletionToolParam]:
+    def _convert_tools(
+        self, tools: list[Tool]
+    ) -> list[ChatCompletionToolParam]:
         """MCP 도구를 OpenAI 형식으로 변환."""
         return [
             {
