@@ -49,8 +49,9 @@ class MCPConfig:
                 transport = TransportType(transport_str)
             except ValueError:
                 mcp_logger.warning(
-                    f"Unknown transport '{transport_str}' for {name}, "
-                    f"falling back to 'sse'"
+                    "Unknown transport '%s' for %s, falling back to 'sse'",
+                    transport_str,
+                    name,
                 )
                 transport = TransportType.SSE
 
@@ -63,7 +64,10 @@ class MCPConfig:
             )
             servers.append(server)
             mcp_logger.debug(
-                f"Loaded server config: {name} -> {server.url} ({transport.value})"
+                "Loaded server config: %s -> %s (%s)",
+                name,
+                server.url,
+                transport.value,
             )
 
         return cls(servers=servers)
@@ -84,7 +88,7 @@ class MCPConfig:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
-        mcp_logger.info(f"Loaded config from file: {file_path}")
+        mcp_logger.info("Loaded config from file: %s", file_path)
         return cls.from_dict(data)
 
 
