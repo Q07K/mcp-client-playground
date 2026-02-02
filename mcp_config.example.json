@@ -1,0 +1,9 @@
+{
+    "mcpServers": {
+        "math_server": {
+            "url": "http://localhost:8000/sse",
+            "headers": {},
+            "timeout": 30
+        }
+    }
+}
